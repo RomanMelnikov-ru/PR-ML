@@ -99,6 +99,10 @@ def show_feature_importance(coefficients, feature_names):
 # Функция для выполнения регрессии
 def run_regression(df, regression_type):
     try:
+        # Проверка на NaN
+        if df.isnull().any().any():
+            raise ValueError("В данных есть пропущенные значения (NaN). Пожалуйста, заполните их перед запуском модели.")
+
         X = df[["A", "B", "C", "D"]]
         y = df["E"]
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -166,11 +170,9 @@ def run_regression(df, regression_type):
             st.write("Максимальная глубина дерева: None (дерево растёт до тех пор, пока все листья не станут чистыми или пока не будет достигнуто минимальное количество образцов в листе).")
 
         elif regression_type == "Random Forest (Случайный лес)":
-            n_estimators = 200
-            max_depth = 20
-            model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
-            st.write(f"Количество деревьев: {n_estimators}")
-            st.write(f"Максимальная глубина деревьев: {max_depth}")
+            model = RandomForestRegressor(n_estimators=100, max_depth=None, random_state=42)
+            st.write(f"Количество деревьев: 100")
+            st.write(f"Максимальная глубина деревьев: None (дерево растёт до тех пор, пока все листья не станут чистыми).")
 
         elif regression_type == "Gradient Boosting (Градиентный бустинг)":
             model = GradientBoostingRegressor(random_state=42)
@@ -248,6 +250,8 @@ def run_regression(df, regression_type):
         ]:
             save_model_to_file(model, regression_type)
 
+    except ValueError as e:
+        st.error(f"Ошибка: {e}")
     except Exception as e:
         st.error(f"Ошибка при выполнении регрессии: {e}")
 
@@ -309,9 +313,9 @@ if df is not None:
     regression_types = [
         "Линейная", "Квадратическая", "Кубическая", "Логарифмическая", "Экспоненциальная", "Степенная",
         "Lasso", "SVR (Метод опорных векторов)", "Decision Tree (Решающее дерево)", "Random Forest (Случайный лес)",
-        "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)",
-        "Neural Network (Нейронная сеть)"
+        "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)", "Neural Network (Нейронная сеть)"
     ]
+
     regression_type = st.selectbox("Выберите тип регрессии", regression_types)
 
     # Запуск регрессии
