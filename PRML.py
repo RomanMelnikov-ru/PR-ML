@@ -139,7 +139,7 @@ def run_regression(df, regression_type):
             coefficients = model.coef_
             intercept = model.intercept_
             feature_names = X.columns  # Добавлено для экспоненциальной регрессии
-            show_formula(coefficients, intercept, feature_names, regression_type)
+            
 
         elif regression_type == "Степенная":
             if (X_train.values <= 0).any() or (y_train <= 0).any():
@@ -156,7 +156,7 @@ def run_regression(df, regression_type):
             coefficients = model.coef_
             intercept = model.intercept_
             feature_names = X.columns  # Добавлено для степенной регрессии
-            show_formula(coefficients, intercept, feature_names, regression_type)
+            
 
         elif regression_type == "Lasso":
             model = make_pipeline(StandardScaler(), Lasso(alpha=0.1))
