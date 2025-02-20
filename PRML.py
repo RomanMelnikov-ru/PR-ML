@@ -315,7 +315,6 @@ if df is not None:
         "Lasso", "SVR (Метод опорных векторов)", "Decision Tree (Решающее дерево)", "Random Forest (Случайный лес)",
         "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)", "Neural Network (Нейронная сеть)"
     ]
-
     regression_type = st.selectbox("Выберите тип регрессии", regression_types)
 
     # Запуск регрессии
