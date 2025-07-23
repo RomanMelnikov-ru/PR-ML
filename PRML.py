@@ -44,7 +44,23 @@ def load_data():
             st.error(f"Ошибка при загрузке файла: {e}")
     return None
 
-# Функция для отображения тепловых карт корреляций
+
+# Функция для расчета выборочного корреляционного отношения
+def calculate_correlation_ratio(df, target_col):
+    categories = df.drop(target_col, axis=1).columns
+    ratios = {}
+    for cat in categories:
+        grouped = df.groupby(cat)[target_col]
+        n = len(df)
+        y_mean = df[target_col].mean()
+        ss_total = ((df[target_col] - y_mean) ** 2).sum()
+        ss_between = grouped.apply(lambda x: len(x) * (x.mean() - y_mean) ** 2).sum()
+        eta_squared = ss_between / ss_total
+        ratios[cat] = eta_squared
+    return ratios
+
+
+# Обновленная функция для отображения тепловых карт корреляций
 def show_correlation_heatmaps(df):
     with st.expander("Тепловые карты корреляций"):
         st.subheader("Тепловая карта корреляции Пирсона")
@@ -56,6 +72,41 @@ def show_correlation_heatmaps(df):
         spearman_corr_matrix = df.corr(method="spearman")
         fig_spearman = px.imshow(spearman_corr_matrix, text_auto=True, color_continuous_scale="Plasma")
         st.plotly_chart(fig_spearman)
+
+        st.subheader("Корреляционное отношение (η²) для целевой переменной E")
+        try:
+            eta_squared = calculate_correlation_ratio(df, "E")
+            eta_df = pd.DataFrame.from_dict(eta_squared, orient='index', columns=['η²'])
+            fig_eta = px.bar(eta_df, y='η²', labels={'index': 'Факторы', 'y': 'Корреляционное отношение η²'})
+            st.plotly_chart(fig_eta)
+
+            # Добавляем тепловую карту корреляционных отношений
+            st.subheader("Тепловая карта корреляционных отношений")
+            # Рассчитываем корреляционные отношения для всех пар переменных
+            all_vars = df.columns
+            eta_matrix = pd.DataFrame(index=all_vars, columns=all_vars)
+
+            for var1 in all_vars:
+                for var2 in all_vars:
+                    if var1 == var2:
+                        eta_matrix.loc[var1, var2] = 1.0
+                    else:
+                        grouped = df.groupby(var1)[var2]
+                        n = len(df)
+                        y_mean = df[var2].mean()
+                        ss_total = ((df[var2] - y_mean) ** 2).sum()
+                        ss_between = grouped.apply(lambda x: len(x) * (x.mean() - y_mean) ** 2).sum()
+                        eta_squared = ss_between / ss_total
+                        eta_matrix.loc[var1, var2] = eta_squared
+
+            fig_eta_matrix = px.imshow(eta_matrix.astype(float), text_auto=True,
+                                       color_continuous_scale="Viridis",
+                                       labels=dict(x="Переменная 1", y="Переменная 2", color="η²"),
+                                       zmin=0, zmax=1)
+            st.plotly_chart(fig_eta_matrix)
+
+        except Exception as e:
+            st.error(f"Ошибка при расчете корреляционного отношения: {e}")
 
 # Функция для отображения формулы с коэффициентами
 def show_formula(coefficients, intercept, feature_names, regression_type):
@@ -139,7 +190,7 @@ def run_regression(df, regression_type):
             coefficients = model.coef_
             intercept = model.intercept_
             feature_names = X.columns  # Добавлено для экспоненциальной регрессии
-            
+            show_formula(coefficients, intercept, feature_names, regression_type)
 
         elif regression_type == "Степенная":
             if (X_train.values <= 0).any() or (y_train <= 0).any():
@@ -156,7 +207,7 @@ def run_regression(df, regression_type):
             coefficients = model.coef_
             intercept = model.intercept_
             feature_names = X.columns  # Добавлено для степенной регрессии
-            
+            show_formula(coefficients, intercept, feature_names, regression_type)
 
         elif regression_type == "Lasso":
             model = make_pipeline(StandardScaler(), Lasso(alpha=0.1))
