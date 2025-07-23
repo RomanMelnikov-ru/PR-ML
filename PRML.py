@@ -60,24 +60,42 @@ def calculate_correlation_ratio(df, target_col):
     return ratios
 
 
-# Обновленная функция для отображения тепловых карт корреляций
+# Обновленная функция для отображения тепловых карт корреляций с округлением
 def show_correlation_heatmaps(df):
     with st.expander("Тепловые карты корреляций"):
         st.subheader("Тепловая карта корреляции Пирсона")
-        pearson_corr_matrix = df.corr(method="pearson")
-        fig_pearson = px.imshow(pearson_corr_matrix, text_auto=True, color_continuous_scale="Viridis")
+        pearson_corr_matrix = df.corr(method="pearson").round(3)
+        fig_pearson = px.imshow(
+            pearson_corr_matrix,
+            text_auto=True,
+            color_continuous_scale="Viridis",
+            zmin=-1,
+            zmax=1
+        )
         st.plotly_chart(fig_pearson)
 
         st.subheader("Тепловая карта корреляции Спирмана")
-        spearman_corr_matrix = df.corr(method="spearman")
-        fig_spearman = px.imshow(spearman_corr_matrix, text_auto=True, color_continuous_scale="Plasma")
+        spearman_corr_matrix = df.corr(method="spearman").round(3)
+        fig_spearman = px.imshow(
+            spearman_corr_matrix,
+            text_auto=True,
+            color_continuous_scale="Plasma",
+            zmin=-1,
+            zmax=1
+        )
         st.plotly_chart(fig_spearman)
 
         st.subheader("Корреляционное отношение (η²) для целевой переменной E")
         try:
             eta_squared = calculate_correlation_ratio(df, "E")
-            eta_df = pd.DataFrame.from_dict(eta_squared, orient='index', columns=['η²'])
-            fig_eta = px.bar(eta_df, y='η²', labels={'index': 'Факторы', 'y': 'Корреляционное отношение η²'})
+            eta_df = pd.DataFrame.from_dict(eta_squared, orient='index', columns=['η²']).round(3)
+            fig_eta = px.bar(
+                eta_df,
+                y='η²',
+                labels={'index': 'Факторы', 'y': 'Корреляционное отношение η²'},
+                text='η²'
+            )
+            fig_eta.update_traces(texttemplate='%{text:.3f}', textposition='outside')
             st.plotly_chart(fig_eta)
 
             # Добавляем тепловую карту корреляционных отношений
@@ -99,10 +117,15 @@ def show_correlation_heatmaps(df):
                         eta_squared = ss_between / ss_total
                         eta_matrix.loc[var1, var2] = eta_squared
 
-            fig_eta_matrix = px.imshow(eta_matrix.astype(float), text_auto=True,
-                                       color_continuous_scale="Viridis",
-                                       labels=dict(x="Переменная 1", y="Переменная 2", color="η²"),
-                                       zmin=0, zmax=1)
+            eta_matrix = eta_matrix.astype(float).round(3)
+            fig_eta_matrix = px.imshow(
+                eta_matrix,
+                text_auto=True,
+                color_continuous_scale="Viridis",
+                labels=dict(x="Переменная 1", y="Переменная 2", color="η²"),
+                zmin=0,
+                zmax=1
+            )
             st.plotly_chart(fig_eta_matrix)
 
         except Exception as e:
