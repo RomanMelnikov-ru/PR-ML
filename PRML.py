@@ -23,6 +23,11 @@ from tensorflow.keras.models import Sequential, save_model
 from tensorflow.keras.layers import Dense
 import io
 import os
+from itertools import product
+from tqdm import tqdm
+import tensorflow as tf
+tf.keras.utils.set_random_seed(42)  # Фиксирует все случайные сиды
+tf.config.experimental.enable_op_determinism()  # Устраняет недетерминизм GPU
 
 # Функция для загрузки данных
 def load_data():
@@ -60,7 +65,7 @@ def calculate_correlation_ratio(df, target_col):
     return ratios
 
 
-# Обновленная функция для отображения тепловых карт корреляций с округлением
+# Функция для отображения тепловых карт корреляций
 def show_correlation_heatmaps(df):
     with st.expander("Тепловые карты корреляций"):
         st.subheader("Тепловая карта корреляции Пирсона")
@@ -98,9 +103,7 @@ def show_correlation_heatmaps(df):
             fig_eta.update_traces(texttemplate='%{text:.3f}', textposition='outside')
             st.plotly_chart(fig_eta)
 
-            # Добавляем тепловую карту корреляционных отношений
             st.subheader("Тепловая карта корреляционных отношений")
-            # Рассчитываем корреляционные отношения для всех пар переменных
             all_vars = df.columns
             eta_matrix = pd.DataFrame(index=all_vars, columns=all_vars)
 
@@ -130,6 +133,7 @@ def show_correlation_heatmaps(df):
 
         except Exception as e:
             st.error(f"Ошибка при расчете корреляционного отношения: {e}")
+
 
 # Функция для отображения формулы с коэффициентами
 def show_formula(coefficients, intercept, feature_names, regression_type):
@@ -163,6 +167,7 @@ def show_formula(coefficients, intercept, feature_names, regression_type):
     st.subheader("Формула модели")
     st.write(formula)
 
+
 # Функция для отображения графика значимости факторов
 def show_feature_importance(coefficients, feature_names):
     st.subheader("График значимости факторов")
@@ -170,12 +175,13 @@ def show_feature_importance(coefficients, feature_names):
     fig = px.bar(x=feature_names, y=importance, labels={"x": "Факторы", "y": "Важность"})
     st.plotly_chart(fig)
 
+
 # Функция для выполнения регрессии
 def run_regression(df, regression_type):
     try:
-        # Проверка на NaN
         if df.isnull().any().any():
-            raise ValueError("В данных есть пропущенные значения (NaN). Пожалуйста, заполните их перед запуском модели.")
+            raise ValueError(
+                "В данных есть пропущенные значения (NaN). Пожалуйста, заполните их перед запуском модели.")
 
         X = df[["A", "B", "C", "D"]]
         y = df["E"]
@@ -212,7 +218,7 @@ def run_regression(df, regression_type):
             y_pred = np.exp(y_pred_log)
             coefficients = model.coef_
             intercept = model.intercept_
-            feature_names = X.columns  # Добавлено для экспоненциальной регрессии
+            feature_names = X.columns
             show_formula(coefficients, intercept, feature_names, regression_type)
 
         elif regression_type == "Степенная":
@@ -229,7 +235,7 @@ def run_regression(df, regression_type):
             y_pred = np.exp(y_pred_log)
             coefficients = model.coef_
             intercept = model.intercept_
-            feature_names = X.columns  # Добавлено для степенной регрессии
+            feature_names = X.columns
             show_formula(coefficients, intercept, feature_names, regression_type)
 
         elif regression_type == "Lasso":
@@ -241,12 +247,14 @@ def run_regression(df, regression_type):
 
         elif regression_type == "Decision Tree (Решающее дерево)":
             model = DecisionTreeRegressor(random_state=42)
-            st.write("Максимальная глубина дерева: None (дерево растёт до тех пор, пока все листья не станут чистыми или пока не будет достигнуто минимальное количество образцов в листе).")
+            st.write(
+                "Максимальная глубина дерева: None (дерево растёт до тех пор, пока все листья не станут чистыми или пока не будет достигнуто минимальное количество образцов в листе).")
 
         elif regression_type == "Random Forest (Случайный лес)":
             model = RandomForestRegressor(n_estimators=100, max_depth=None, random_state=42)
             st.write(f"Количество деревьев: 100")
-            st.write(f"Максимальная глубина деревьев: None (дерево растёт до тех пор, пока все листья не станут чистыми).")
+            st.write(
+                f"Максимальная глубина деревьев: None (дерево растёт до тех пор, пока все листья не станут чистыми).")
 
         elif regression_type == "Gradient Boosting (Градиентный бустинг)":
             model = GradientBoostingRegressor(random_state=42)
@@ -260,7 +268,7 @@ def run_regression(df, regression_type):
 
         elif regression_type == "Neural Network (Нейронная сеть)":
             model = Sequential()
-            model.add(Dense(64, input_dim=X_train.shape[1], activation='relu'))
+            model.add(Dense(64, input_dim=X_train.shape[1], kernel_initializer='glorot_uniform'))  # Явная инициализация
             model.add(Dense(32, activation='relu'))
             model.add(Dense(1))
             model.compile(optimizer='adam', loss='mean_squared_error')
@@ -269,13 +277,13 @@ def run_regression(df, regression_type):
             st.subheader("График обучения")
             fig = px.line(history.history, y=['loss', 'val_loss'], labels={"value": "Loss", "index": "Epoch"})
             st.plotly_chart(fig)
-            st.write("Архитектура сети: 64 нейрона (входной слой), 32 нейрона (скрытый слой), 1 нейрон (выходной слой).")
+            st.write(
+                "Архитектура сети: 64 нейрона (входной слой), 32 нейрона (скрытый слой), 1 нейрон (выходной слой).")
 
         if regression_type not in ["Экспоненциальная", "Степенная", "Neural Network (Нейронная сеть)"]:
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
 
-        # Вывод метрик
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
         mae = mean_absolute_error(y_test, y_pred)
@@ -289,11 +297,13 @@ def run_regression(df, regression_type):
         st.write(f"MAPE (Средняя абсолютная процентная ошибка): {mape:.2f}%")
         st.write(f"R² (Коэффициент детерминации): {r2:.2f}")
 
-        # Формула и значимость факторов для аналитических решений
-        if regression_type in ["Линейная", "Квадратическая", "Кубическая", "Логарифмическая", "Lasso", "Экспоненциальная", "Степенная"]:
+        if regression_type in ["Линейная", "Квадратическая", "Кубическая", "Логарифмическая", "Lasso",
+                               "Экспоненциальная", "Степенная"]:
             if regression_type in ["Линейная", "Квадратическая", "Кубическая", "Логарифмическая", "Lasso"]:
-                coefficients = model.named_steps["linearregression"].coef_ if regression_type != "Lasso" else model.named_steps["lasso"].coef_
-                intercept = model.named_steps["linearregression"].intercept_ if regression_type != "Lasso" else model.named_steps["lasso"].intercept_
+                coefficients = model.named_steps["linearregression"].coef_ if regression_type != "Lasso" else \
+                model.named_steps["lasso"].coef_
+                intercept = model.named_steps["linearregression"].intercept_ if regression_type != "Lasso" else \
+                model.named_steps["lasso"].intercept_
                 feature_names = (
                     X.columns
                     if regression_type == "Линейная"
@@ -305,10 +315,10 @@ def run_regression(df, regression_type):
             if regression_type != "Экспоненциальная" and regression_type != "Степенная":
                 show_feature_importance(coefficients, feature_names)
 
-        # Графики
         st.subheader("График фактических vs предсказанных значений")
         fig1 = px.scatter(x=y_test, y=y_pred, labels={"x": "Фактические значения", "y": "Предсказанные значения"})
-        fig1.add_trace(go.Scatter(x=[y_test.min(), y_test.max()], y=[y_test.min(), y_test.max()], mode="lines", name="Идеальная линия"))
+        fig1.add_trace(go.Scatter(x=[y_test.min(), y_test.max()], y=[y_test.min(), y_test.max()], mode="lines",
+                                  name="Идеальная линия"))
         st.plotly_chart(fig1)
 
         st.subheader("График остатков")
@@ -317,10 +327,10 @@ def run_regression(df, regression_type):
         fig2.add_hline(y=0, line_dash="dash", line_color="red")
         st.plotly_chart(fig2)
 
-        # Сохранение модели (только для машинного обучения и нейронных сетей)
         if regression_type in [
             "SVR (Метод опорных векторов)", "Decision Tree (Решающее дерево)", "Random Forest (Случайный лес)",
-            "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)", "Neural Network (Нейронная сеть)"
+            "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)",
+            "Neural Network (Нейронная сеть)"
         ]:
             save_model_to_file(model, regression_type)
 
@@ -329,6 +339,7 @@ def run_regression(df, regression_type):
     except Exception as e:
         st.error(f"Ошибка при выполнении регрессии: {e}")
 
+
 # Функция для сохранения модели
 def save_model_to_file(model, regression_type):
     if model is None:
@@ -336,30 +347,23 @@ def save_model_to_file(model, regression_type):
         return
 
     try:
-        # Выбор формата файла
         if regression_type == "Neural Network (Нейронная сеть)":
             file_format = st.selectbox("Выберите формат файла", [".h5"])
         else:
             file_format = st.selectbox("Выберите формат файла", [".pkl", ".joblib"])
 
-        # Определение имени файла по умолчанию
         default_filename = f"model{file_format}"
-
-        # Запрос пути для сохранения файла
         file_path = st.text_input("Введите имя файла для сохранения модели", value=default_filename)
 
         if st.button("Сохранить модель"):
             if regression_type == "Neural Network (Нейронная сеть)":
-                # Сохранение модели Keras
                 save_model(model, file_path)
             else:
-                # Сохранение моделей машинного обучения
                 if file_format == ".pkl":
                     joblib.dump(model, file_path)
                 elif file_format == ".joblib":
                     joblib.dump(model, file_path)
 
-            # Скачивание файла
             with open(file_path, "rb") as f:
                 st.download_button(
                     label="Скачать модель",
@@ -368,14 +372,152 @@ def save_model_to_file(model, regression_type):
                     mime="application/octet-stream"
                 )
             st.success(f"Модель сохранена в файл: {file_path}")
-
-            # Удаление временного файла после скачивания
             os.remove(file_path)
 
     except Exception as e:
         st.error(f"Ошибка при сохранении модели: {e}")
 
-# Основной интерфейс Streamlit
+
+# Функция для сравнения моделей
+def compare_models(df):
+    st.subheader("Сравнение моделей по коэффициенту детерминации R²")
+
+    if df is None:
+        st.warning("Загрузите данные для сравнения моделей")
+        return
+
+    try:
+        if df.isnull().any().any():
+            raise ValueError(
+                "В данных есть пропущенные значения (NaN). Пожалуйста, заполните их перед сравнением моделей.")
+
+        X = df[["A", "B", "C", "D"]]
+        y = df["E"]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        models = {
+            "Линейная": make_pipeline(StandardScaler(), LinearRegression()),
+            "Квадратическая": make_pipeline(StandardScaler(), PolynomialFeatures(degree=2), LinearRegression()),
+            "Кубическая": make_pipeline(StandardScaler(), PolynomialFeatures(degree=3), LinearRegression()),
+            "Lasso": make_pipeline(StandardScaler(), Lasso(alpha=0.1)),
+            "SVR": make_pipeline(StandardScaler(), SVR(kernel='rbf')),
+            "Decision Tree": DecisionTreeRegressor(random_state=42),
+            "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42),
+            "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+            "Gaussian Processes": GaussianProcessRegressor(kernel=C(1.0) * RBF(10), random_state=42)
+        }
+
+        special_models = ["Логарифмическая", "Экспоненциальная", "Степенная"]
+
+        results = []
+
+        # Оцениваем стандартные модели
+        for name, model in tqdm(models.items(), desc="Оценка моделей"):
+            try:
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_test)
+                r2 = r2_score(y_test, y_pred)
+                results.append({"Модель": name, "R²": r2, "Тип": "standard"})
+            except Exception as e:
+                results.append({"Модель": name, "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+
+        # Оцениваем специальные модели
+        for model_type in special_models:
+            try:
+                if model_type == "Логарифмическая":
+                    if (X_train.values <= 0).any() or (X_test.values <= 0).any():
+                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
+                        continue
+                    log_x_train = np.log(X_train)
+                    log_x_test = np.log(X_test)
+                    model = LinearRegression()
+                    model.fit(log_x_train, y_train)
+                    y_pred = model.predict(log_x_test)
+
+                elif model_type == "Экспоненциальная":
+                    if (y_train <= 0).any() or (y_test <= 0).any():
+                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
+                        continue
+                    y_train_log = np.log(y_train)
+                    model = LinearRegression()
+                    model.fit(X_train, y_train_log)
+                    y_pred_log = model.predict(X_test)
+                    y_pred = np.exp(y_pred_log)
+
+                elif model_type == "Степенная":
+                    if (X_train.values <= 0).any() or (y_train <= 0).any():
+                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
+                        continue
+                    X_train_log = np.log(X_train)
+                    y_train_log = np.log(y_train)
+                    model = LinearRegression()
+                    model.fit(X_train_log, y_train_log)
+                    y_pred_log = model.predict(np.log(X_test))
+                    y_pred = np.exp(y_pred_log)
+
+                r2 = r2_score(y_test, y_pred)
+                results.append({"Модель": model_type, "R²": r2, "Тип": "standard"})
+            except Exception as e:
+                results.append({"Модель": model_type, "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+
+        # Оцениваем нейронную сеть
+        try:
+            model = Sequential()
+            model.add(Dense(64, input_dim=X_train.shape[1], kernel_initializer='glorot_uniform'))  # Явная инициализация
+            model.add(Dense(32, activation='relu'))
+            model.add(Dense(1))
+            model.compile(optimizer='adam', loss='mean_squared_error')
+            model.fit(X_train, y_train, epochs=100, batch_size=10, verbose=0)
+            y_pred = model.predict(X_test).flatten()
+            r2 = r2_score(y_test, y_pred)
+            results.append({"Модель": "Нейронная сеть", "R²": r2, "Тип": "standard"})
+        except Exception as e:
+            results.append({"Модель": "Нейронная сеть", "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+
+        # Создаем DataFrame и сортируем
+        results_df = pd.DataFrame(results)
+
+        # Разделяем на успешные модели и ошибки
+        success_df = results_df[results_df["Тип"] == "standard"].copy()
+        error_df = results_df[results_df["Тип"] == "error"].copy()
+
+        # Сортируем успешные модели по R²
+        success_df = success_df.sort_values(by="R²", ascending=False)
+
+        # Объединяем результаты
+        final_df = pd.concat([success_df, error_df]).drop(columns=["Тип"])
+
+        # Форматируем вывод
+        def format_r2(val):
+            if isinstance(val, str):
+                return val
+            return f"{val:.4f}"
+
+        final_df["R²"] = final_df["R²"].apply(format_r2)
+
+        # Отображаем результаты
+        st.dataframe(
+            final_df.style
+            .apply(lambda x: ["background: lightgreen" if isinstance(x["R²"], float) and x["R²"] > 0.7
+                              else "background: lightyellow" if isinstance(x["R²"], float) and x["R²"] > 0.5
+            else "background: lightcoral" if isinstance(x["R²"], float)
+            else "" for i in range(len(x))], axis=1)
+            .set_properties(**{'text-align': 'center'})
+        )
+
+        st.markdown("""
+        **Пояснения:**
+        - <span style="background-color:lightgreen">Зеленый</span>: Отличная модель (R² > 0.7)
+        - <span style="background-color:lightyellow">Желтый</span>: Хорошая модель (R² > 0.5)
+        - <span style="background-color:lightcoral">Красный</span>: Плохая модель (R² ≤ 0.5)
+        - Ошибки выделены стандартным цветом
+        """, unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Ошибка при сравнении моделей: {e}")
+
+
+# Основной интерфейс
 st.title("Полиномиальная регрессия и машинное обучение")
 
 # Загрузка данных
@@ -383,14 +525,16 @@ df = load_data()
 if df is not None:
     show_correlation_heatmaps(df)
 
-    # Выбор типа регрессии
+    if st.button("Сравнить все модели по R²"):
+        compare_models(df)
+
     regression_types = [
         "Линейная", "Квадратическая", "Кубическая", "Логарифмическая", "Экспоненциальная", "Степенная",
         "Lasso", "SVR (Метод опорных векторов)", "Decision Tree (Решающее дерево)", "Random Forest (Случайный лес)",
-        "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)", "Neural Network (Нейронная сеть)"
+        "Gradient Boosting (Градиентный бустинг)", "Gaussian Processes (Гауссовские процессы)",
+        "Neural Network (Нейронная сеть)"
     ]
     regression_type = st.selectbox("Выберите тип регрессии", regression_types)
 
-    # Запуск регрессии
     if st.button("Запустить регрессию"):
         run_regression(df, regression_type)
