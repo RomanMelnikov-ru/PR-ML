@@ -500,110 +500,135 @@ def compare_models(df):
         }
 
         special_models = ["Логарифмическая", "Экспоненциальная", "Степенная"]
-
         results = []
 
-        # Оцениваем стандартные модели
-        for name, model in tqdm(models.items(), desc="Оценка моделей"):
+        # Оценка стандартных моделей
+        for name, model in models.items():
             try:
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
                 r2 = r2_score(y_test, y_pred)
-                results.append({"Модель": name, "R²": r2, "Тип": "standard"})
+                results.append({"Модель": name, "R²": r2})
             except Exception as e:
-                results.append({"Модель": name, "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+                results.append({"Модель": name, "R²": f"Ошибка: {str(e)}"})
 
-        # Оцениваем специальные модели
+        # Оценка специальных моделей
         for model_type in special_models:
             try:
                 if model_type == "Логарифмическая":
                     if (X_train.values <= 0).any() or (X_test.values <= 0).any():
-                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
-                        continue
-                    log_x_train = np.log(X_train)
-                    log_x_test = np.log(X_test)
-                    model = LinearRegression()
-                    model.fit(log_x_train, y_train)
-                    y_pred = model.predict(log_x_test)
+                        raise ValueError("Требуются положительные значения")
+                    model = make_pipeline(StandardScaler(), FunctionTransformer(np.log), LinearRegression())
+                    model.fit(X_train, y_train)
+                    y_pred = model.predict(X_test)
 
                 elif model_type == "Экспоненциальная":
-                    if (y_train <= 0).any() or (y_test <= 0).any():
-                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
-                        continue
-                    y_train_log = np.log(y_train)
-                    model = LinearRegression()
-                    model.fit(X_train, y_train_log)
-                    y_pred_log = model.predict(X_test)
-                    y_pred = np.exp(y_pred_log)
+                    if (y_train <= 0).any():
+                        raise ValueError("Требуются положительные значения")
+                    model = make_pipeline(StandardScaler(), LinearRegression())
+                    model.fit(X_train, np.log(y_train))
+                    y_pred = np.exp(model.predict(X_test))
 
                 elif model_type == "Степенная":
                     if (X_train.values <= 0).any() or (y_train <= 0).any():
-                        results.append({"Модель": model_type, "R²": "Требуются положительные значения", "Тип": "error"})
-                        continue
-                    X_train_log = np.log(X_train)
-                    y_train_log = np.log(y_train)
-                    model = LinearRegression()
-                    model.fit(X_train_log, y_train_log)
-                    y_pred_log = model.predict(np.log(X_test))
-                    y_pred = np.exp(y_pred_log)
+                        raise ValueError("Требуются положительные значения")
+                    model = make_pipeline(
+                        FunctionTransformer(lambda x: np.log(x)),
+                        StandardScaler(),
+                        LinearRegression()
+                    )
+                    model.fit(X_train, np.log(y_train))
+                    y_pred = np.exp(model.predict(X_test))
 
                 r2 = r2_score(y_test, y_pred)
-                results.append({"Модель": model_type, "R²": r2, "Тип": "standard"})
+                results.append({"Модель": model_type, "R²": r2})
             except Exception as e:
-                results.append({"Модель": model_type, "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+                results.append({"Модель": model_type, "R²": f"Ошибка: {str(e)}"})
 
-        # Оцениваем нейронную сеть
+        # Оценка нейронной сети
         try:
-            model = Sequential()
-            model.add(Dense(64, input_dim=X_train.shape[1], kernel_initializer='glorot_uniform'))  # Явная инициализация
-            model.add(Dense(32, activation='relu'))
-            model.add(Dense(1))
-            model.compile(optimizer='adam', loss='mean_squared_error')
+            model = Sequential([
+                Dense(64, input_dim=X_train.shape[1], activation='relu'),
+                Dense(32, activation='relu'),
+                Dense(1)
+            ])
+            model.compile(optimizer='adam', loss='mse')
             model.fit(X_train, y_train, epochs=100, batch_size=10, verbose=0)
             y_pred = model.predict(X_test).flatten()
             r2 = r2_score(y_test, y_pred)
-            results.append({"Модель": "Нейронная сеть", "R²": r2, "Тип": "standard"})
+            results.append({"Модель": "Нейронная сеть", "R²": r2})
         except Exception as e:
-            results.append({"Модель": "Нейронная сеть", "R²": f"Ошибка: {str(e)}", "Тип": "error"})
+            results.append({"Модель": "Нейронная сеть", "R²": f"Ошибка: {str(e)}"})
 
-        # Создаем DataFrame и сортируем
+        # Создание DataFrame
         results_df = pd.DataFrame(results)
 
-        # Разделяем на успешные модели и ошибки
-        success_df = results_df[results_df["Тип"] == "standard"].copy()
-        error_df = results_df[results_df["Тип"] == "error"].copy()
+        # Разделение на числовые и текстовые значения R²
+        numeric_mask = results_df['R²'].apply(lambda x: isinstance(x, (int, float)))
+        numeric_df = results_df[numeric_mask].sort_values('R²', ascending=False)
+        error_df = results_df[~numeric_mask]
 
-        # Сортируем успешные модели по R²
-        success_df = success_df.sort_values(by="R²", ascending=False)
+        # Объединение результатов
+        final_df = pd.concat([numeric_df, error_df])
 
-        # Объединяем результаты
-        final_df = pd.concat([success_df, error_df]).drop(columns=["Тип"])
+        # Функция для стилизации ячеек
+        def style_row(row):
+            styles = [''] * len(row)
+            r2 = row['R²']
 
-        # Форматируем вывод
-        def format_r2(val):
-            if isinstance(val, str):
-                return val
-            return f"{val:.4f}"
+            if isinstance(r2, str):
+                styles[1] = 'background-color: #CCCCCC; color: black'
+            elif r2 > 0.7:
+                styles[1] = 'background-color: #4CAF50; color: white'
+            elif r2 > 0.5:
+                styles[1] = 'background-color: #FFC107; color: black'
+            else:
+                styles[1] = 'background-color: #F44336; color: white'
 
-        final_df["R²"] = final_df["R²"].apply(format_r2)
+            return styles
 
-        # Отображаем результаты
-        st.dataframe(
-            final_df.style
-            .apply(lambda x: ["background: lightgreen" if isinstance(x["R²"], float) and x["R²"] > 0.7
-                              else "background: lightyellow" if isinstance(x["R²"], float) and x["R²"] > 0.5
-            else "background: lightcoral" if isinstance(x["R²"], float)
-            else "" for i in range(len(x))], axis=1)
-            .set_properties(**{'text-align': 'center'})
-        )
+        # Применение стилей
+        styled_df = final_df.style.apply(style_row, axis=1)
 
+        # Форматирование числовых значений
+        styled_df = styled_df.format({
+            'R²': lambda x: f"{x:.4f}" if isinstance(x, (int, float)) else x
+        })
+
+        # Отображение результатов
+        st.dataframe(styled_df)
+
+        # Легенда
         st.markdown("""
-        **Пояснения:**
-        - <span style="background-color:lightgreen">Зеленый</span>: Отличная модель (R² > 0.7)
-        - <span style="background-color:lightyellow">Желтый</span>: Хорошая модель (R² > 0.5)
-        - <span style="background-color:lightcoral">Красный</span>: Плохая модель (R² ≤ 0.5)
-        - Ошибки выделены стандартным цветом
+        **Легенда:**
+        - <span style='color: white; background-color: #4CAF50; padding: 2px 6px; border-radius: 4px;'>R² > 0.7</span> - Отличное качество
+        - <span style='color: black; background-color: #FFC107; padding: 2px 6px; border-radius: 4px;'>0.5 < R² ≤ 0.7</span> - Хорошее качество
+        - <span style='color: white; background-color: #F44336; padding: 2px 6px; border-radius: 4px;'>R² ≤ 0.5</span> - Низкое качество
+        - <span style='color: black; background-color: #CCCCCC; padding: 2px 6px; border-radius: 4px;'>Серый</span> - Ошибка в расчетах
         """, unsafe_allow_html=True)
+
+        # График для успешных моделей
+        if not numeric_df.empty:
+            st.subheader("Графическое сравнение моделей")
+            fig = px.bar(
+                numeric_df,
+                x='Модель',
+                y='R²',
+                color='R²',
+                color_continuous_scale=['#F44336', '#FFC107', '#4CAF50'],
+                range_color=[max(numeric_df['R²'].min() - 0.1, -0.1), 1],
+                text='R²',
+                title='Сравнение моделей по коэффициенту R²'
+            )
+            fig.update_traces(
+                texttemplate='%{text:.3f}',
+                textposition='outside'
+            )
+            fig.update_layout(
+                yaxis_range=[max(numeric_df['R²'].min() - 0.1, -0.1), 1.1],
+                coloraxis_showscale=False
+            )
+            st.plotly_chart(fig)
 
     except Exception as e:
         st.error(f"Ошибка при сравнении моделей: {e}")
