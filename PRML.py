@@ -28,6 +28,7 @@ from tqdm import tqdm
 import tensorflow as tf
 tf.keras.utils.set_random_seed(42)  # Фиксирует все случайные сиды
 tf.config.experimental.enable_op_determinism()  # Устраняет недетерминизм GPU
+from scipy.stats import pearsonr, spearmanr
 
 # Функция для загрузки данных
 def load_data():
@@ -49,7 +50,6 @@ def load_data():
             st.error(f"Ошибка при загрузке файла: {e}")
     return None
 
-
 # Функция для расчета выборочного корреляционного отношения
 def calculate_correlation_ratio(df, target_col):
     categories = df.drop(target_col, axis=1).columns
@@ -64,76 +64,172 @@ def calculate_correlation_ratio(df, target_col):
         ratios[cat] = eta_squared
     return ratios
 
+def calculate_pvalues(df, method='pearson'):
+    df = df._get_numeric_data()
+    cols = pd.DataFrame(columns=df.columns)
+    p = cols.transpose().join(cols, how='outer')
+    for r in df.columns:
+        for c in df.columns:
+            if r == c:
+                p[r][c] = 0
+            else:
+                if method == 'pearson':
+                    p[r][c] = pearsonr(df[r], df[c])[1]
+                elif method == 'spearman':
+                    p[r][c] = spearmanr(df[r], df[c])[1]
+    return p
 
-# Функция для отображения тепловых карт корреляций
+def add_significance_stars(corr_matrix, p_matrix):
+    sig_matrix = np.empty_like(corr_matrix, dtype=object)
+    for i in range(corr_matrix.shape[0]):
+        for j in range(corr_matrix.shape[1]):
+            corr = corr_matrix.iloc[i,j]
+            p = p_matrix.iloc[i,j]
+            if p < 0.001:
+                sig = f"{corr:.2f}***"
+            elif p < 0.01:
+                sig = f"{corr:.2f}**"
+            elif p < 0.05:
+                sig = f"{corr:.2f}*"
+            else:
+                sig = f"{corr:.2f}"
+            sig_matrix[i,j] = sig
+    return sig_matrix
+
+def calculate_eta_matrix(df):
+    all_vars = df.columns
+    eta_matrix = pd.DataFrame(index=all_vars, columns=all_vars)
+    for var1 in all_vars:
+        for var2 in all_vars:
+            if var1 == var2:
+                eta_matrix.loc[var1, var2] = 1.0
+            else:
+                grouped = df.groupby(var1)[var2]
+                n = len(df)
+                y_mean = df[var2].mean()
+                ss_total = ((df[var2] - y_mean) ** 2).sum()
+                ss_between = grouped.apply(lambda x: len(x) * (x.mean() - y_mean) ** 2).sum()
+                eta_squared = ss_between / ss_total
+                eta_matrix.loc[var1, var2] = eta_squared
+    return eta_matrix.astype(float).round(3)
+
 def show_correlation_heatmaps(df):
     with st.expander("Тепловые карты корреляций"):
+        # Общие настройки для всех карт
+        color_scale = px.colors.diverging.RdBu
+        zmin, zmax = -1, 1
+        annotation_size = 14
+        axis_font_size = 16
+        title_font_size = 18
+
+        # Тепловая карта корреляции Пирсона
         st.subheader("Тепловая карта корреляции Пирсона")
-        pearson_corr_matrix = df.corr(method="pearson").round(3)
+        pearson_corr = df.corr(method='pearson')
+        pearson_p = calculate_pvalues(df, method='pearson')
+        pearson_sig = add_significance_stars(pearson_corr, pearson_p)
+
         fig_pearson = px.imshow(
-            pearson_corr_matrix,
-            text_auto=True,
-            color_continuous_scale="Viridis",
-            zmin=-1,
-            zmax=1
+            pearson_corr,
+            text_auto=False,
+            color_continuous_scale=color_scale,
+            zmin=zmin,
+            zmax=zmax,
+            labels=dict(color="Коэффициент корреляции")
+        )
+        fig_pearson.update_traces(
+            text=pearson_sig,
+            texttemplate="%{text}",
+            textfont={"size": annotation_size}
         )
         st.plotly_chart(fig_pearson)
 
+        # Тепловая карта корреляции Спирмана
         st.subheader("Тепловая карта корреляции Спирмана")
-        spearman_corr_matrix = df.corr(method="spearman").round(3)
+        spearman_corr = df.corr(method='spearman')
+        spearman_p = calculate_pvalues(df, method='spearman')
+        spearman_sig = add_significance_stars(spearman_corr, spearman_p)
+
         fig_spearman = px.imshow(
-            spearman_corr_matrix,
-            text_auto=True,
-            color_continuous_scale="Plasma",
-            zmin=-1,
-            zmax=1
+            spearman_corr,
+            text_auto=False,
+            color_continuous_scale=color_scale,
+            zmin=zmin,
+            zmax=zmax,
+            labels=dict(color="Коэффициент корреляции")
+        )
+        fig_spearman.update_traces(
+            text=spearman_sig,
+            texttemplate="%{text}",
+            textfont={"size": annotation_size}
         )
         st.plotly_chart(fig_spearman)
 
+        st.markdown("""
+        **Интерпретация коэффициентов корреляции (шкала Чеддока):**
+        - 0.90—1.00 — Очень высокая корреляция
+        - 0.70—0.89 — Высокая корреляция
+        - 0.50—0.69 — Заметная корреляция  
+        - 0.30—0.49 — Умеренная корреляция
+        - 0.10—0.29 — Слабая корреляция
+        - 0.00—0.09 — Отсутствует или ничтожна
+        """)
+
+        st.markdown("""
+        **Обозначения уровня значимости:**
+        - \*** p < 0.001 (высокозначимая)
+        - \** p < 0.01 (значимая)
+        - \* p < 0.05 (слабо значимая)
+        - без звездочек — незначимая (p ≥ 0.05)
+        """)
+
+        # Корреляционное отношение (η²)
         st.subheader("Корреляционное отношение (η²) для целевой переменной E")
         try:
             eta_squared = calculate_correlation_ratio(df, "E")
             eta_df = pd.DataFrame.from_dict(eta_squared, orient='index', columns=['η²']).round(3)
+
             fig_eta = px.bar(
                 eta_df,
                 y='η²',
+                color='η²',
+                color_continuous_scale=color_scale,
+                range_color=[0, 1],
                 labels={'index': 'Факторы', 'y': 'Корреляционное отношение η²'},
                 text='η²'
             )
-            fig_eta.update_traces(texttemplate='%{text:.3f}', textposition='outside')
+            fig_eta.update_traces(
+                texttemplate='%{text:.3f}',
+                textposition='outside',
+                textfont_size=annotation_size
+            )
             st.plotly_chart(fig_eta)
 
+            st.markdown("""
+            **Интерпретация корреляционного отношения η²:**
+            - 0.80—1.00 — Очень сильная связь
+            - 0.60—0.79 — Сильная связь
+            - 0.40—0.59 — Умеренная связь  
+            - 0.20—0.39 — Слабая связь
+            - 0.00—0.19 — Очень слабая или отсутствует
+            """)
+
+            # Тепловая карта корреляционных отношений
             st.subheader("Тепловая карта корреляционных отношений")
-            all_vars = df.columns
-            eta_matrix = pd.DataFrame(index=all_vars, columns=all_vars)
-
-            for var1 in all_vars:
-                for var2 in all_vars:
-                    if var1 == var2:
-                        eta_matrix.loc[var1, var2] = 1.0
-                    else:
-                        grouped = df.groupby(var1)[var2]
-                        n = len(df)
-                        y_mean = df[var2].mean()
-                        ss_total = ((df[var2] - y_mean) ** 2).sum()
-                        ss_between = grouped.apply(lambda x: len(x) * (x.mean() - y_mean) ** 2).sum()
-                        eta_squared = ss_between / ss_total
-                        eta_matrix.loc[var1, var2] = eta_squared
-
-            eta_matrix = eta_matrix.astype(float).round(3)
+            eta_matrix = calculate_eta_matrix(df)
             fig_eta_matrix = px.imshow(
                 eta_matrix,
                 text_auto=True,
-                color_continuous_scale="Viridis",
-                labels=dict(x="Переменная 1", y="Переменная 2", color="η²"),
+                color_continuous_scale=color_scale,
                 zmin=0,
                 zmax=1
+            )
+            fig_eta_matrix.update_traces(
+                textfont={"size": annotation_size}
             )
             st.plotly_chart(fig_eta_matrix)
 
         except Exception as e:
             st.error(f"Ошибка при расчете корреляционного отношения: {e}")
-
 
 # Функция для отображения формулы с коэффициентами
 def show_formula(coefficients, intercept, feature_names, regression_type):
@@ -167,14 +263,12 @@ def show_formula(coefficients, intercept, feature_names, regression_type):
     st.subheader("Формула модели")
     st.write(formula)
 
-
 # Функция для отображения графика значимости факторов
 def show_feature_importance(coefficients, feature_names):
     st.subheader("График значимости факторов")
     importance = np.abs(coefficients)
     fig = px.bar(x=feature_names, y=importance, labels={"x": "Факторы", "y": "Важность"})
     st.plotly_chart(fig)
-
 
 # Функция для выполнения регрессии
 def run_regression(df, regression_type):
@@ -339,7 +433,6 @@ def run_regression(df, regression_type):
     except Exception as e:
         st.error(f"Ошибка при выполнении регрессии: {e}")
 
-
 # Функция для сохранения модели
 def save_model_to_file(model, regression_type):
     if model is None:
@@ -376,7 +469,6 @@ def save_model_to_file(model, regression_type):
 
     except Exception as e:
         st.error(f"Ошибка при сохранении модели: {e}")
-
 
 # Функция для сравнения моделей
 def compare_models(df):
@@ -515,7 +607,6 @@ def compare_models(df):
 
     except Exception as e:
         st.error(f"Ошибка при сравнении моделей: {e}")
-
 
 # Основной интерфейс
 st.title("Полиномиальная регрессия и машинное обучение")
