@@ -1,9 +1,10 @@
-streamlit>=1.25.0
-pandas>=1.5.3
-numpy>=1.23.5
-plotly>=5.16.1
-scikit-learn>=1.2.2
-joblib>=1.2.0
-tensorflow>=2.12.0
-openpyxl>=3.1.0  # Добавлена зависимость для работы с Excel
-tqdm>=4.65.0  # Добавляем tqdm для отображения прогресс-баров
+streamlit==1.39.0
+pandas==2.2.2
+numpy==1.26.4
+plotly==5.23.0
+scikit-learn==1.5.1
+joblib==1.4.2
+tensorflow==2.16.1
+xgboost==2.0.3
+statsmodels==0.14.4
+scipy==1.13.1
